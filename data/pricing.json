@@ -1,0 +1,17 @@
+{
+  "tiktok_coins": [
+    { "coins": 65, "price": 1500 },
+    { "coins": 330, "price": 7400 },
+    { "coins": 660, "price": 14800 },
+    { "coins": 1321, "price": 29600 },
+    { "coins": 6607, "price": 148000 }
+  ],
+  "data_bundles": [
+    { "network": "MTN", "bundle": "50MB", "price": 100 },
+    { "network": "MTN", "bundle": "100MB", "price": 200 },
+    { "network": "MTN", "bundle": "500MB", "price": 900 },
+    { "network": "MTN", "bundle": "1GB", "price": 1700 },
+    { "network": "MTN", "bundle": "2GB", "price": 3000 },
+    { "network": "MTN", "bundle": "5GB", "price": 7000 }
+  ]
+}
