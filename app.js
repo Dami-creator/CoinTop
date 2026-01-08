@@ -7,231 +7,138 @@ const PORT = process.env.PORT || 3000;
 
 app.use(bodyParser.urlencoded({ extended: true }));
 
+/* ===== CONFIG ===== */
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const ADMIN_SECRET = process.env.ADMIN_SECRET;
 
+const INTEREST_PERCENT = 10;
+
+/* ===== DYNAMIC PRICES (UPDATED DAILY) ===== */
+
+let DATA_PLANS = {
+  MTN: { "1GB": 1000, "2GB": 1900, "5GB": 4500 },
+  Airtel: { "1GB": 950, "2GB": 1800, "5GB": 4300 },
+  Glo: { "1GB": 900, "2GB": 1700, "5GB": 4000 }
+};
+
+let TIKTOK_COINS = {
+  "350 Coins": 4500,
+  "700 Coins": 9000,
+  "1400 Coins": 18000
+};
+
 let orders = [];
 
-/* ================= HOME PAGE ================= */
+/* ===== HELPERS ===== */
+const addInterest = amt => Math.ceil(amt + (amt * INTEREST_PERCENT) / 100);
+
+/* ================= HOME ================= */
 app.get("/", (req, res) => {
   res.send(`
-<!DOCTYPE html>
-<html>
-<head>
-<title>CoinTop</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+const DATA=${JSON.stringify(DATA_PLANS)};
+const TIKTOK=${JSON.stringify(TIKTOK_COINS)};
+const INTEREST=${INTEREST_PERCENT};
+
+function loadService(){
+  const s=service.value;
+  networkDiv.style.display = s==="Data"?"block":"none";
+  product.innerHTML="<option>Select</option>";
+  price.innerText="";
+  if(s==="TikTok"){
+    for(let c in TIKTOK) product.innerHTML+=\`<option>\${c}</option>\`;
+  }
+}
+
+function loadPlans(){
+  product.innerHTML="<option>Select</option>";
+  for(let p in DATA[network.value]) product.innerHTML+=\`<option>\${p}</option>\`;
+}
+
+function calc(){
+  let base=0;
+  if(service.value==="Data") base=DATA[network.value][product.value];
+  if(service.value==="TikTok") base=TIKTOK[product.value];
+  if(base){
+    let total=Math.ceil(base+(base*INTEREST)/100);
+    amount.value=total;
+    price.innerText="Pay ₦"+total;
+  }
+}
+</script>
+
 <style>
-body{
-  margin:0;
-  font-family:Segoe UI, sans-serif;
-  background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);
-  min-height:100vh;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  color:#fff;
-}
-.card{
-  background:#111;
-  padding:30px;
-  width:92%;
-  max-width:420px;
-  border-radius:22px;
-  box-shadow:0 15px 30px rgba(0,0,0,.6);
-  animation:fadeIn 1s ease;
-}
-@keyframes fadeIn{
-  from{opacity:0;transform:translateY(20px)}
-  to{opacity:1;transform:translateY(0)}
-}
-h1{text-align:center;color:#00ffcc;}
-.tag{text-align:center;color:#ccc;font-size:14px;margin-bottom:20px;}
-label{display:block;margin-top:12px;font-size:13px;color:#ccc;}
-input,select{
-  width:100%;
-  padding:12px;
-  margin-top:5px;
-  border:none;
-  border-radius:8px;
-  background:#222;
-  color:#fff;
-}
-button{
-  width:100%;
-  margin-top:20px;
-  padding:14px;
-  border:none;
-  border-radius:10px;
-  background:#00ffcc;
-  font-size:16px;
-  font-weight:bold;
-  cursor:pointer;
-}
-button:hover{background:#00ddb3;}
-.footer{text-align:center;margin-top:15px;font-size:12px;color:#aaa;}
-a{color:#00ffcc;text-decoration:none;}
+body{background:#0f2027;color:#fff;font-family:sans-serif;display:flex;justify-content:center}
+.card{background:#111;padding:25px;margin-top:40px;border-radius:20px;width:95%;max-width:420px}
+select,input,button{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:none}
+button{background:#00ffcc;font-weight:bold}
 </style>
-</head>
-<body>
 
 <div class="card">
-<h1>CoinTop</h1>
-<p class="tag">Airtime • Data • TikTok Coins</p>
+<h2>CoinTop</h2>
 
 <form method="POST" action="/checkout">
-
-<label>Service</label>
-<select name="service" required>
-  <option value="">Select</option>
-  <option value="Airtime">Airtime</option>
-  <option value="Data">Data Bundle</option>
-  <option value="TikTok Coins">TikTok Coins</option>
+<select id="service" name="service" onchange="loadService()" required>
+<option value="">Select Service</option>
+<option>Data</option>
+<option>TikTok</option>
 </select>
 
-<label>Network (for Airtime/Data)</label>
-<select name="network">
-  <option value="">Select</option>
-  <option>MTN</option>
-  <option>Airtel</option>
-  <option>Glo</option>
-  <option>9mobile</option>
+<div id="networkDiv" style="display:none">
+<select id="network" name="network" onchange="loadPlans()" required>
+<option value="">Network</option>
+<option>MTN</option><option>Airtel</option><option>Glo</option>
 </select>
+</div>
 
-<label>Phone / TikTok Username</label>
-<input name="user" required placeholder="080xxxxxxx or @username">
+<select id="product" name="product" onchange="calc()" required></select>
 
-<label>Package / Coins</label>
-<input name="product" placeholder="e.g. 5GB / 1000 coins">
+<input name="user" placeholder="Phone / TikTok Username" required>
+<input type="hidden" id="amount" name="amount">
 
-<label>Amount (₦)</label>
-<input type="number" name="amount" required>
-
-<button type="submit">Proceed to Checkout</button>
+<p id="price"></p>
+<button>Proceed</button>
 </form>
-
-<div class="footer">
-Need help? <a href="https://t.me/TyburnUK">Contact Admin</a>
 </div>
-</div>
-
-</body>
-</html>
 `);
 });
 
 /* ================= CHECKOUT ================= */
 app.post("/checkout", async (req, res) => {
-  const { service, network, user, product, amount } = req.body;
+  const o={id:Date.now(),...req.body};
+  orders.push(o);
 
-  const order = {
-    id: Date.now(),
-    service,
-    network,
-    user,
-    product,
-    amount,
-    status: "pending"
-  };
+  await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,{
+    chat_id:TELEGRAM_CHAT_ID,
+    text:`🆕 CoinTop Order\n${o.service}\n${o.product}\n₦${o.amount}\n${o.user}`
+  }).catch(()=>{});
 
-  orders.push(order);
+  res.send(`<h3>Send ₦${o.amount}</h3>
+<p>Damilola Fadiora<br>Kuda MFB<br>2035470845</p>`);
+});
 
-  // Telegram notification
-  try {
-    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      chat_id: TELEGRAM_CHAT_ID,
-      text:
-`🆕 NEW CoinTop ORDER
-Service: ${service}
-Network: ${network || "-"}
-User: ${user}
-Product: ${product}
-Amount: ₦${amount}
-Order ID: ${order.id}`
-    });
-  } catch (e) {}
+/* ================= ADMIN PRICE UPDATE ================= */
+app.get("/admin/:secret", (req,res)=>{
+  if(req.params.secret!==ADMIN_SECRET) return res.send("Unauthorized");
 
   res.send(`
-<!DOCTYPE html>
-<html>
-<head>
-<title>Checkout - CoinTop</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body{
-  background:linear-gradient(135deg,#141e30,#243b55);
-  font-family:Segoe UI;
-  color:#fff;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  min-height:100vh;
-}
-.card{
-  background:#111;
-  padding:25px;
-  width:90%;
-  max-width:420px;
-  border-radius:20px;
-}
-h2{text-align:center;color:#00ffcc;}
-p{font-size:14px;}
-b{color:#00ffcc;}
-</style>
-</head>
-<body>
-
-<div class="card">
-<h2>Payment Instructions</h2>
-
-<p><b>Service:</b> ${service}</p>
-<p><b>User:</b> ${user}</p>
-<p><b>Product:</b> ${product}</p>
-<p><b>Amount:</b> ₦${amount}</p>
-
-<hr>
-
-<p>Send exactly <b>₦${amount}</b> to:</p>
-<p><b>Damilola Fadiora</b></p>
-<p><b>Kuda MFB</b></p>
-<p><b>2035470845</b></p>
-
-<p style="margin-top:15px;font-size:13px;color:#ccc;">
-Admin has been notified on Telegram.
-</p>
-</div>
-
-</body>
-</html>
+<h2>Update Prices</h2>
+<form method="POST">
+<h3>MTN 1GB</h3><input name="mtn1" value="${DATA_PLANS.MTN["1GB"]}">
+<h3>TikTok 350 Coins</h3><input name="t350" value="${TIKTOK["350 Coins"]}">
+<button>Update</button>
+</form>
 `);
 });
 
-/* ================= ADMIN ================= */
-app.get("/admin/:secret", (req, res) => {
-  if (req.params.secret !== ADMIN_SECRET) return res.send("Unauthorized");
+app.post("/admin/:secret",(req,res)=>{
+  if(req.params.secret!==ADMIN_SECRET) return res.send("Unauthorized");
 
-  let rows = orders.map(o => `
-<tr>
-<td>${o.id}</td>
-<td>${o.service}</td>
-<td>${o.user}</td>
-<td>${o.product}</td>
-<td>₦${o.amount}</td>
-<td>${o.status}</td>
-</tr>
-`).join("");
+  DATA_PLANS.MTN["1GB"]=Number(req.body.mtn1);
+  TIKTOK["350 Coins"]=Number(req.body.t350);
 
-  res.send(`
-<h2>CoinTop Admin</h2>
-<table border="1" cellpadding="8">
-<tr>
-<th>ID</th><th>Service</th><th>User</th><th>Product</th><th>Amount</th><th>Status</th>
-</tr>
-${rows}
-</table>
-`);
+  res.send("Prices updated ✅");
 });
 
-app.listen(PORT, () => {
-  console.log("CoinTop running on port " + PORT);
-});
+app.listen(PORT,()=>console.log("CoinTop running"));
