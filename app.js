@@ -234,4 +234,4 @@ ${rows}
 
 app.listen(PORT, () => {
   console.log("CoinTop running on port " + PORT);
-});h
+});
