@@ -1,144 +1,107 @@
-const express = require("express");
-const bodyParser = require("body-parser");
-const axios = require("axios");
+app.get("/checkout", (req, res) => {
+  const { service, network, product, amount, user } = req.query;
+  const finalAmount = Number(amount).toFixed(2);
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(bodyParser.urlencoded({ extended: true }));
-
-/* ===== CONFIG ===== */
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const ADMIN_SECRET = process.env.ADMIN_SECRET;
-
-const INTEREST_PERCENT = 10;
-
-/* ===== DYNAMIC PRICES (UPDATED DAILY) ===== */
-
-let DATA_PLANS = {
-  MTN: { "1GB": 1000, "2GB": 1900, "5GB": 4500 },
-  Airtel: { "1GB": 950, "2GB": 1800, "5GB": 4300 },
-  Glo: { "1GB": 900, "2GB": 1700, "5GB": 4000 }
-};
-
-let TIKTOK_COINS = {
-  "350 Coins": 4500,
-  "700 Coins": 9000,
-  "1400 Coins": 18000
-};
-
-let orders = [];
-
-/* ===== HELPERS ===== */
-const addInterest = amt => Math.ceil(amt + (amt * INTEREST_PERCENT) / 100);
-
-/* ================= HOME ================= */
-app.get("/", (req, res) => {
   res.send(`
-<script>
-const DATA=${JSON.stringify(DATA_PLANS)};
-const TIKTOK=${JSON.stringify(TIKTOK_COINS)};
-const INTEREST=${INTEREST_PERCENT};
-
-function loadService(){
-  const s=service.value;
-  networkDiv.style.display = s==="Data"?"block":"none";
-  product.innerHTML="<option>Select</option>";
-  price.innerText="";
-  if(s==="TikTok"){
-    for(let c in TIKTOK) product.innerHTML+=\`<option>\${c}</option>\`;
-  }
-}
-
-function loadPlans(){
-  product.innerHTML="<option>Select</option>";
-  for(let p in DATA[network.value]) product.innerHTML+=\`<option>\${p}</option>\`;
-}
-
-function calc(){
-  let base=0;
-  if(service.value==="Data") base=DATA[network.value][product.value];
-  if(service.value==="TikTok") base=TIKTOK[product.value];
-  if(base){
-    let total=Math.ceil(base+(base*INTEREST)/100);
-    amount.value=total;
-    price.innerText="Pay ₦"+total;
-  }
-}
-</script>
-
+<!DOCTYPE html>
+<html>
+<head>
+<title>CoinTop - Checkout</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{background:#0f2027;color:#fff;font-family:sans-serif;display:flex;justify-content:center}
-.card{background:#111;padding:25px;margin-top:40px;border-radius:20px;width:95%;max-width:420px}
-select,input,button{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:none}
-button{background:#00ffcc;font-weight:bold}
+body{
+  margin:0;
+  font-family:'Segoe UI',sans-serif;
+  background: linear-gradient(120deg,#141e30,#243b55);
+  background-size: 400% 400%;
+  animation: gradientBG 20s ease infinite;
+  color:#fff;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  min-height:100vh;
+}
+@keyframes gradientBG{
+  0%{background-position:0 50%;}
+  50%{background-position:100% 50%;}
+  100%{background-position:0 50%;}
+}
+.container{
+  background:#111;
+  border-radius:25px;
+  max-width:450px;
+  width:95%;
+  padding:30px;
+  box-shadow:0 15px 40px rgba(0,0,0,0.6);
+  animation:fadeIn 1s ease-in;
+}
+@keyframes fadeIn{
+  0%{opacity:0;transform:translateY(20px);}
+  100%{opacity:1;transform:translateY(0);}
+}
+h2{text-align:center;color:#00ffcc;margin-bottom:10px;}
+p{text-align:center;color:#aaa;margin:5px 0;}
+.amount{font-size:18px;color:#00ffcc;margin:10px 0;text-align:center;font-weight:bold;}
+.instructions{
+  background:#1c1c1c;
+  padding:15px;
+  border-radius:15px;
+  margin-top:15px;
+  font-size:14px;
+  animation:fadeIn 1.2s ease-in;
+}
+.status{margin-top:15px;text-align:center;font-size:16px;color:#00ffcc;}
+button{
+  padding:12px 18px;
+  border:none;
+  border-radius:12px;
+  background:#00ffcc;
+  color:#111;
+  font-weight:bold;
+  cursor:pointer;
+  transition:0.3s;
+  width:100%;
+  margin-top:15px;
+  box-shadow:0 6px 20px rgba(0,255,204,0.5);
+}
+button:hover{
+  transform:scale(1.05);
+  background:#00ddb3;
+  box-shadow:0 8px 25px rgba(0,255,204,0.6);
+}
+.footer{text-align:center;margin-top:20px;font-size:12px;color:#aaa;}
 </style>
+</head>
+<body>
+<div class="container">
+<h2>Checkout - ${service}</h2>
+<p><b>Product:</b> ${product}${network? ' ('+network+')':''}</p>
+<p class="amount">₦${finalAmount}</p>
 
-<div class="card">
-<h2>CoinTop</h2>
-
-<form method="POST" action="/checkout">
-<select id="service" name="service" onchange="loadService()" required>
-<option value="">Select Service</option>
-<option>Data</option>
-<option>TikTok</option>
-</select>
-
-<div id="networkDiv" style="display:none">
-<select id="network" name="network" onchange="loadPlans()" required>
-<option value="">Network</option>
-<option>MTN</option><option>Airtel</option><option>Glo</option>
-</select>
+<div class="instructions">
+<p>Send exactly <b>₦${finalAmount}</b> to:</p>
+<p><b>Damilola Fadiora</b></p>
+<p><b>Kuda MFB</b></p>
+<p><b>2035470845</b></p>
 </div>
 
-<select id="product" name="product" onchange="calc()" required></select>
-
-<input name="user" placeholder="Phone / TikTok Username" required>
-<input type="hidden" id="amount" name="amount">
-
-<p id="price"></p>
-<button>Proceed</button>
-</form>
+<div class="status" id="status">⏳ Awaiting admin...</div>
+<button onclick="window.location='/'">Back Home</button>
+<div class="footer">Contact Admin: <a href="https://t.me/TyburnUK" style="color:#00ffcc;">Telegram</a></div>
 </div>
-`);
+
+<script>
+function checkStatus(){
+  fetch("/order-status/${Date.now()}")
+  .then(res=>res.json())
+  .then(data=>{
+    document.getElementById("status").textContent = data.status==="sent"?"✅ Credited!":"⏳ Awaiting admin...";
+    if(data.status!=="sent") setTimeout(checkStatus,3000);
+  });
+}
+window.onload=checkStatus;
+</script>
+</body>
+</html>
+  `);
 });
-
-/* ================= CHECKOUT ================= */
-app.post("/checkout", async (req, res) => {
-  const o={id:Date.now(),...req.body};
-  orders.push(o);
-
-  await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,{
-    chat_id:TELEGRAM_CHAT_ID,
-    text:`🆕 CoinTop Order\n${o.service}\n${o.product}\n₦${o.amount}\n${o.user}`
-  }).catch(()=>{});
-
-  res.send(`<h3>Send ₦${o.amount}</h3>
-<p>Damilola Fadiora<br>Kuda MFB<br>2035470845</p>`);
-});
-
-/* ================= ADMIN PRICE UPDATE ================= */
-app.get("/admin/:secret", (req,res)=>{
-  if(req.params.secret!==ADMIN_SECRET) return res.send("Unauthorized");
-
-  res.send(`
-<h2>Update Prices</h2>
-<form method="POST">
-<h3>MTN 1GB</h3><input name="mtn1" value="${DATA_PLANS.MTN["1GB"]}">
-<h3>TikTok 350 Coins</h3><input name="t350" value="${TIKTOK["350 Coins"]}">
-<button>Update</button>
-</form>
-`);
-});
-
-app.post("/admin/:secret",(req,res)=>{
-  if(req.params.secret!==ADMIN_SECRET) return res.send("Unauthorized");
-
-  DATA_PLANS.MTN["1GB"]=Number(req.body.mtn1);
-  TIKTOK["350 Coins"]=Number(req.body.t350);
-
-  res.send("Prices updated ✅");
-});
-
-app.listen(PORT,()=>console.log("CoinTop running"));
