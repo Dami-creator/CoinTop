@@ -1,258 +1,213 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const axios = require("axios");
+const multer = require("multer");
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middlewares
+// ===== MIDDLEWARES =====
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
-// Load variables
+// ===== FILE UPLOAD =====
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
+
+// ===== ENV VARIABLES =====
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const ADMIN_SECRET = process.env.ADMIN_SECRET;
 
-// Interest/markup on prices
-const MARKUP_PERCENT = 5;
-
-// ---------------------
-// Predefined options
-// ---------------------
-
-const airtimeOptions = {
-  MTN: [100, 200, 500, 1000],
-  Airtel: [100, 200, 500, 1000],
-  Glo: [100, 200, 500, 1000],
-  "9mobile": [100, 200, 500, 1000],
-};
-
-const dataBundles = {
-  MTN: ["500MB", "1GB", "2GB", "5GB"],
-  Airtel: ["500MB", "1GB", "2GB", "5GB"],
-  Glo: ["500MB", "1GB", "2GB", "5GB"],
-  "9mobile": ["500MB", "1GB", "2GB", "5GB"],
-};
-
-// ---------------------
-// Orders storage (in-memory)
-// ---------------------
+// ===== IN-MEMORY ORDERS =====
 let orders = [];
 
-// ---------------------
-// Homepage
-// ---------------------
+// ===== FIXED PRICES =====
+const DATA_PRICES = {
+  MTN: {
+    "500MB": 350,
+    "1GB": 600,
+    "2GB": 1200,
+    "5GB": 2800
+  },
+  GLO: {
+    "1GB": 500,
+    "2GB": 1000,
+    "5GB": 2500
+  },
+  AIRTEL: {
+    "1GB": 600,
+    "2GB": 1200,
+    "5GB": 3000
+  },
+  "9MOBILE": {
+    "1GB": 700,
+    "2GB": 1400
+  }
+};
+
+const AIRTIME_PRICES = {
+  100: 100,
+  200: 200,
+  500: 500,
+  1000: 1000
+};
+
+// ===== HOME =====
 app.get("/", (req, res) => {
-  res.send(`<!DOCTYPE html>
-<html>
-<head>
-<title>CoinTop</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body {
-  margin:0; font-family:'Segoe UI',sans-serif; display:flex; justify-content:center; align-items:center;
-  min-height:100vh; background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
-  overflow:hidden; animation: bgMove 20s linear infinite; color:#fff;
-}
-@keyframes bgMove {
-  0%{background-position:0 0;} 50%{background-position:100% 100%;} 100%{background-position:0 0;}
-}
-.card {
-  background:#111; padding:30px; border-radius:20px; width:95%; max-width:450px;
-  box-shadow:0 15px 30px rgba(0,0,0,0.6); animation: fadeIn 1s ease-in;
-}
-@keyframes fadeIn {0%{opacity:0;transform:translateY(20px);}100%{opacity:1;transform:translateY(0);}}
-h1{text-align:center;color:#00ffcc;font-size:28px;margin-bottom:8px;}
-p{text-align:center;font-size:14px;color:#ccc;}
-label{display:block;margin-top:12px;font-size:13px;}
-input, select{width:100%;padding:12px;margin-top:6px;border-radius:8px;border:none;font-size:14px;background:#222;color:#fff;}
-button{width:100%;padding:14px;margin-top:18px;background:#00ffcc;border:none;border-radius:10px;font-size:16px;font-weight:bold;cursor:pointer;transition:0.3s;box-shadow:0 4px 10px rgba(0,255,204,0.4);}
-button:hover{background:#00ddb3;transform:scale(1.03);box-shadow:0 6px 15px rgba(0,255,204,0.6);}
-.footer{text-align:center;margin-top:15px;font-size:12px;color:#aaa;}
-a{color:#00ffcc;text-decoration:none;}
-</style>
-</head>
-<body>
-<div class="card">
-<h1>CoinTop</h1>
-<p>Fast Airtime & Data Recharge</p>
-<form action="/checkout" method="POST">
-<label>Service</label>
-<select name="service" required>
-  <option value="">Choose</option>
-  <option value="airtime">Airtime</option>
-  <option value="data">Data Bundle</option>
-</select>
+  res.send(`
+  <html>
+  <head>
+    <title>CoinTop</title>
+    <style>
+      body{background:#0f0f0f;color:#fff;font-family:Segoe UI}
+      .box{max-width:420px;margin:60px auto;background:#1c1c1c;padding:25px;border-radius:18px}
+      h2{text-align:center;color:#00ffcc}
+      select,input,button{width:100%;padding:12px;margin-top:10px;border-radius:10px;border:none}
+      button{background:#00ffcc;color:#000;font-weight:bold}
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h2>Buy Airtime & Data</h2>
+      <form action="/checkout" method="POST">
+        <select name="service" required>
+          <option value="">Select Service</option>
+          <option value="airtime">Airtime</option>
+          <option value="data">Data</option>
+        </select>
 
-<label>Network</label>
-<select name="network" required>
-  <option value="">Select network</option>
-  <option>MTN</option>
-  <option>Airtel</option>
-  <option>Glo</option>
-  <option>9mobile</option>
-</select>
+        <select name="network" required>
+          <option value="">Select Network</option>
+          <option>MTN</option>
+          <option>GLO</option>
+          <option>AIRTEL</option>
+          <option>9MOBILE</option>
+        </select>
 
-<label>Phone Number</label>
-<input type="tel" name="phone" placeholder="080xxxxxxxx" required>
+        <select name="bundle" required>
+          <option value="">Select Bundle / Amount</option>
+          <option>100</option>
+          <option>200</option>
+          <option>500</option>
+          <option>1000</option>
+          <option>500MB</option>
+          <option>1GB</option>
+          <option>2GB</option>
+          <option>5GB</option>
+        </select>
 
-<label>Amount / Bundle</label>
-<select name="amountOrBundle" required>
-  <option value="">Select amount or bundle</option>
-</select>
+        <input type="text" name="phone" placeholder="Phone Number" required>
 
-<button type="submit">Proceed</button>
-</form>
-<div class="footer">Need help? <a href="https://t.me/TyburnUK">Contact Admin</a></div>
-</div>
-<script>
-const airtimeOptions = ${JSON.stringify(airtimeOptions)};
-const dataBundles = ${JSON.stringify(dataBundles)};
-const serviceSelect = document.querySelector('select[name="service"]');
-const networkSelect = document.querySelector('select[name="network"]');
-const amountSelect = document.querySelector('select[name="amountOrBundle"]');
-
-function updateAmounts(){
-  const service = serviceSelect.value;
-  const network = networkSelect.value;
-  amountSelect.innerHTML = '<option value="">Select amount or bundle</option>';
-  if(!service || !network) return;
-  const options = service === 'airtime' ? airtimeOptions[network] : dataBundles[network];
-  options.forEach(o=>{
-    amountSelect.innerHTML += '<option value="'+o+'">'+o+'</option>';
-  });
-}
-serviceSelect.addEventListener('change',updateAmounts);
-networkSelect.addEventListener('change',updateAmounts);
-</script>
-</body>
-</html>`);
+        <button type="submit">Proceed to Checkout</button>
+      </form>
+    </div>
+  </body>
+  </html>
+  `);
 });
 
-// ---------------------
-// Checkout
-// ---------------------
-app.post("/checkout", (req,res)=>{
-  const { service, network, phone, amountOrBundle } = req.body;
-  if(!service || !network || !phone || !amountOrBundle){
-    return res.send("Please fill all fields");
+// ===== CHECKOUT =====
+app.post("/checkout", (req, res) => {
+  const { service, network, bundle, phone } = req.body;
+
+  let amount = 0;
+
+  if (service === "airtime") {
+    amount = AIRTIME_PRICES[bundle];
+  } else {
+    amount = DATA_PRICES[network]?.[bundle];
   }
 
-  // Calculate final price for airtime (markup for data can also be added if needed)
-  let finalAmount = service === "airtime" ? Number(amountOrBundle)*(1+MARKUP_PERCENT/100) : amountOrBundle;
+  if (!amount) {
+    return res.send("Invalid selection");
+  }
 
   const order = {
     id: Date.now(),
     service,
     network,
+    bundle,
     phone,
-    amount: finalAmount,
-    status:"pending"
+    amount,
+    status: "pending"
   };
+
   orders.push(order);
 
-  // Send Telegram notification
-  axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  res.send(`
+  <html>
+  <body style="background:#0f0f0f;color:#fff;font-family:Segoe UI;display:flex;justify-content:center;align-items:center;height:100vh;">
+    <div style="background:#1c1c1c;padding:25px;border-radius:18px;width:400px">
+      <h2 style="color:#00ffcc;text-align:center">Checkout</h2>
+      <p><b>Service:</b> ${service}</p>
+      <p><b>Network:</b> ${network}</p>
+      <p><b>Bundle:</b> ${bundle}</p>
+      <p><b>Phone:</b> ${phone}</p>
+      <p><b>Amount:</b> ₦${amount}</p>
+
+      <hr>
+
+      <p><b>Pay To:</b></p>
+      <p>Damilola Fadiora</p>
+      <p>Kuda MFB</p>
+      <p><b>2035470845</b></p>
+
+      <form action="/confirm-payment" method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="orderId" value="${order.id}">
+        <input type="text" name="reference" placeholder="Payment Reference" required>
+        <input type="file" name="proof" accept="image/*" required>
+        <button type="submit">I Have Paid</button>
+      </form>
+    </div>
+  </body>
+  </html>
+  `);
+});
+
+// ===== CONFIRM PAYMENT =====
+app.post("/confirm-payment", upload.single("proof"), async (req, res) => {
+  const { orderId, reference } = req.body;
+  const order = orders.find(o => o.id == orderId);
+
+  if (!order) return res.send("Order not found");
+
+  order.status = "payment submitted";
+  order.reference = reference;
+
+  await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     chat_id: TELEGRAM_CHAT_ID,
-    text:`New Order Received!\nService: ${service}\nNetwork: ${network}\nPhone: ${phone}\nAmount: ${finalAmount}\nOrder ID: ${order.id}`
+    text: `💰 PAYMENT SUBMITTED
+Order ID: ${order.id}
+Service: ${order.service}
+Network: ${order.network}
+Bundle: ${order.bundle}
+Phone: ${order.phone}
+Amount: ₦${order.amount}
+Reference: ${reference}`
   }).catch(console.log);
 
-  // Checkout confirmation page
-  res.send(`<!DOCTYPE html>
-<html>
-<head>
-<title>Order Received</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body{margin:0;font-family:'Segoe UI',sans-serif;background:linear-gradient(135deg,#141e30,#243b55);color:#fff;min-height:100vh;display:flex;justify-content:center;align-items:center;}
-.card{background:#111;width:95%;max-width:450px;padding:25px;border-radius:20px;box-shadow:0 15px 30px rgba(0,0,0,0.6);}
-h2{text-align:center;color:#00ffcc;}
-.info{background:#1c1c1c;padding:15px;border-radius:12px;margin-top:15px;font-size:14px;}
-.status{margin-top:15px;text-align:center;font-size:16px;}
-.footer{margin-top:15px;font-size:12px;text-align:center;color:#aaa;}
-</style>
-</head>
-<body>
-<div class="card">
-<h2>Order Received</h2>
-<div class="info">
-<p><b>Service:</b> ${service}</p>
-<p><b>Network:</b> ${network}</p>
-<p><b>Phone:</b> ${phone}</p>
-<p><b>Amount/Bundle:</b> ${amountOrBundle}</p>
-<p><b>Final Amount (₦):</b> ${finalAmount}</p>
-<hr>
-<p>Admin will process your order shortly.</p>
-</div>
-<div class="status">⏳ Awaiting admin...</div>
-<div class="footer">Contact Admin: <a href="https://t.me/TyburnUK">Telegram</a></div>
-</div>
-</body>
-</html>`);
+  res.send(`
+  <html>
+  <body style="background:#0f0f0f;color:#fff;font-family:Segoe UI;display:flex;justify-content:center;align-items:center;height:100vh;">
+    <div style="background:#1c1c1c;padding:25px;border-radius:18px;text-align:center">
+      <h2 style="color:#00ffcc">Payment Submitted</h2>
+      <p>Please wait while we confirm.</p>
+      <a href="/" style="color:#00ffcc">Return Home</a>
+    </div>
+  </body>
+  </html>
+  `);
 });
 
-// ---------------------
-// Admin Dashboard
-// ---------------------
-app.get("/admin/:secret",(req,res)=>{
-  if(req.params.secret!==ADMIN_SECRET) return res.send("Unauthorized");
-  let rows = orders.map(o=>`
-  <tr>
-  <td>${o.id}</td>
-  <td>${o.service}</td>
-  <td>${o.network}</td>
-  <td>${o.phone}</td>
-  <td>${o.amount}</td>
-  <td>${o.status}</td>
-  <td>
-    <form method="POST" action="/admin/${ADMIN_SECRET}/send">
-    <input type="hidden" name="id" value="${o.id}">
-    <button type="submit">Mark Sent</button>
-    </form>
-  </td>
-  </tr>`).join("");
-  res.send(`<!DOCTYPE html>
-<html>
-<head>
-<title>Admin Dashboard</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body{font-family:'Segoe UI',sans-serif;background:#111;color:#fff;padding:20px;}
-table{width:100%;border-collapse:collapse;}
-th,td{border:1px solid #444;padding:8px;text-align:center;}
-th{background:#222;color:#00ffcc;}
-button{padding:6px 10px;border:none;border-radius:5px;background:#00ffcc;color:#111;cursor:pointer;transition:0.3s;}
-button:hover{background:#00ddb3;}
-</style>
-</head>
-<body>
-<h2>Admin Dashboard</h2>
-<table>
-<tr><th>ID</th><th>Service</th><th>Network</th><th>Phone</th><th>Amount</th><th>Status</th><th>Action</th></tr>
-${rows}
-</table>
-</body>
-</html>`);
+// ===== ADMIN PANEL =====
+app.get(`/admin/${ADMIN_SECRET}`, (req, res) => {
+  res.json(orders);
 });
 
-// ---------------------
-// Mark order sent
-// ---------------------
-app.post("/admin/:secret/send", bodyParser.urlencoded({ extended:true }), (req,res)=>{
-  if(req.params.secret!==ADMIN_SECRET) return res.send("Unauthorized");
-  const id = Number(req.body.id);
-  const order = orders.find(o=>o.id===id);
-  if(order){
-    order.status="sent";
-    axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,{
-      chat_id: TELEGRAM_CHAT_ID,
-      text:`Order ID ${order.id} marked as sent!\nService: ${order.service}\nPhone: ${order.phone}`
-    }).catch(console.log);
-  }
-  res.redirect(`/admin/${ADMIN_SECRET}`);
+// ===== START =====
+app.listen(PORT, () => {
+  console.log("CoinTop running on port", PORT);
 });
-
-// ---------------------
-// Start server
-// ---------------------
-app.listen(PORT,()=>console.log(`CoinTop running on port ${PORT}`));
