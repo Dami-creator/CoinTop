@@ -1,6 +1,7 @@
 {
   "name": "cointop",
   "version": "1.0.0",
+  "description": "Automated Airtime & Data Delivery",
   "main": "app.js",
   "scripts": {
     "start": "node app.js"
