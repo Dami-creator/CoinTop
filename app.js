@@ -1,215 +1,186 @@
+// app.js
 const express = require("express");
 const bodyParser = require("body-parser");
 const axios = require("axios");
-const crypto = require("crypto");
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ====== ENV ======
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
-const SMEPLUG_API_KEY = process.env.SMEPLUG_API_KEY;
-const SMEPLUG_BASE_URL = process.env.SMEPLUG_BASE_URL;
+// Middlewares
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.static("public"));
+
+// ---------------------
+// Environment Variables
+// ---------------------
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY; // Your Paystack secret
+const SMEPLUG_API_KEY = process.env.SMEPLUG_API_KEY; // Your SMEPlug API key
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const MARKUP_PERCENT = Number(process.env.MARKUP_PERCENT || 5);
+const ADMIN_SECRET = process.env.ADMIN_SECRET;
+const MARKUP_PERCENT = 5; // Interest/markup
 
-// ====== MIDDLEWARE ======
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
+// ---------------------
+// Fixed Products & Prices
+// ---------------------
+const AIRTIME_OPTIONS = [
+  { network: "MTN", amount: 50 },
+  { network: "MTN", amount: 100 },
+  { network: "Airtel", amount: 50 },
+  { network: "Glo", amount: 50 },
+  { network: "9mobile", amount: 50 },
+];
 
-// ====== FIXED PLANS ======
-const DATA_PLANS = {
-  MTN: [
-    { id: "mtn_sme_1gb", name: "1GB SME", price: 500 },
-    { id: "mtn_sme_2gb", name: "2GB SME", price: 950 },
-    { id: "mtn_cg_1gb", name: "1GB CG", price: 550 }
-  ],
-  AIRTEL: [
-    { id: "airtel_1gb", name: "1GB", price: 480 }
-  ],
-  GLO: [
-    { id: "glo_1gb", name: "1GB", price: 450 }
-  ],
-  "9MOBILE": [
-    { id: "9mobile_1gb", name: "1GB", price: 500 }
-  ]
-};
+const DATA_BUNDLES = [
+  { network: "MTN", plan: "100MB", amount: 200 },
+  { network: "MTN", plan: "500MB", amount: 500 },
+  { network: "Airtel", plan: "1GB", amount: 1000 },
+  { network: "Glo", plan: "500MB", amount: 400 },
+  { network: "9mobile", plan: "750MB", amount: 500 },
+];
 
-const AIRTIME = {
-  MTN: [100, 200, 500, 1000],
-  AIRTEL: [100, 200, 500, 1000],
-  GLO: [100, 200, 500, 1000],
-  "9MOBILE": [100, 200, 500, 1000]
-};
+// Orders storage
+let orders = [];
 
-// ====== HELPERS ======
-const addMarkup = (price) =>
-  Math.ceil(price + (price * MARKUP_PERCENT) / 100);
-
-async function notifyTelegram(msg) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
-  await axios.post(
-    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
-    { chat_id: TELEGRAM_CHAT_ID, text: msg }
-  );
-}
-
-// ====== HOME ======
+// ---------------------
+// Home Page
+// ---------------------
 app.get("/", (req, res) => {
+  let airtimeOptionsHtml = AIRTIME_OPTIONS.map(o => `<option value="${o.network}|${o.amount}">${o.network} - ₦${o.amount}</option>`).join("");
+  let dataOptionsHtml = DATA_BUNDLES.map(o => `<option value="${o.network}|${o.plan}|${o.amount}">${o.network} - ${o.plan} - ₦${o.amount}</option>`).join("");
+
   res.send(`
-<!DOCTYPE html>
-<html>
-<head>
-<title>CoinTop</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body{
-  margin:0;
-  font-family:Segoe UI, sans-serif;
-  background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);
-  color:#fff;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  min-height:100vh;
-}
-.card{
-  background:#111;
-  padding:30px;
-  border-radius:20px;
-  width:95%;
-  max-width:480px;
-  box-shadow:0 20px 40px rgba(0,0,0,.7);
-  animation:fade 1s;
-}
-@keyframes fade{from{opacity:0;transform:translateY(20px)}to{opacity:1}}
-h1{text-align:center;color:#00ffcc;font-size:32px}
-label{font-weight:bold;margin-top:12px;display:block;font-size:18px}
-select,input,button{
-  width:100%;
-  padding:14px;
-  margin-top:6px;
-  border-radius:10px;
-  border:none;
-  font-size:18px;
-}
-button{
-  background:#00ffcc;
-  font-weight:bold;
-  margin-top:20px;
-}
-</style>
-</head>
-<body>
-<div class="card">
-<h1>CoinTop</h1>
-<form method="POST" action="/pay">
-<label>Service</label>
-<select name="service" required>
-<option value="">Select</option>
-<option value="airtime">Airtime</option>
-<option value="data">Data</option>
-</select>
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>CoinTop - Airtime & Data</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      body{margin:0;font-family:'Segoe UI',sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);color:#fff;overflow:hidden;animation:bgMove 20s linear infinite;}
+      @keyframes bgMove{0%{background-position:0 0;}50%{background-position:100% 100%;}100%{background-position:0 0;}}
+      .card{background:#111;padding:30px;border-radius:20px;width:95%;max-width:500px;box-shadow:0 15px 30px rgba(0,0,0,0.6);animation:fadeIn 1s ease-in;}
+      @keyframes fadeIn{0%{opacity:0;transform:translateY(20px);}100%{opacity:1;transform:translateY(0);}}
+      h1{text-align:center;color:#00ffcc;font-size:28px;margin-bottom:10px;}
+      label{display:block;margin-top:12px;font-size:14px;}
+      input, select{width:100%;padding:12px;margin-top:6px;border-radius:8px;border:none;font-size:14px;background:#222;color:#fff;}
+      button{width:100%;padding:14px;margin-top:18px;background:#00ffcc;border:none;border-radius:10px;font-size:16px;font-weight:bold;cursor:pointer;transition:0.3s;box-shadow:0 4px 10px rgba(0,255,204,0.4);}
+      button:hover{background:#00ddb3;transform:scale(1.03);box-shadow:0 6px 15px rgba(0,255,204,0.6);}
+      .footer{text-align:center;margin-top:15px;font-size:12px;color:#aaa;}
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>CoinTop</h1>
+      <p>Fast Airtime & Data Recharge</p>
 
-<label>Network</label>
-<select name="network" required>
-<option>MTN</option>
-<option>AIRTEL</option>
-<option>GLO</option>
-<option>9MOBILE</option>
-</select>
+      <form action="/checkout" method="POST">
+        <label>Select Service</label>
+        <select name="service" required>
+          <option value="">Choose</option>
+          <option value="airtime">Airtime</option>
+          <option value="data">Data</option>
+        </select>
 
-<label>Plan / Amount</label>
-<select name="plan" required>
-<option value="100">₦100 Airtime</option>
-<option value="200">₦200 Airtime</option>
-<option value="500">₦500 Airtime</option>
-<option value="1000">₦1000 Airtime</option>
-<option value="mtn_sme_1gb">MTN 1GB SME</option>
-<option value="mtn_sme_2gb">MTN 2GB SME</option>
-<option value="mtn_cg_1gb">MTN 1GB CG</option>
-</select>
+        <label>Airtime Options</label>
+        <select name="airtime" id="airtimeSelect">
+          <option value="">Select Airtime</option>
+          ${airtimeOptionsHtml}
+        </select>
 
-<label>Phone Number</label>
-<input name="phone" placeholder="080xxxxxxxx" required>
+        <label>Data Options</label>
+        <select name="data" id="dataSelect">
+          <option value="">Select Data</option>
+          ${dataOptionsHtml}
+        </select>
 
-<button type="submit">Pay Now</button>
-</form>
+        <label>Phone Number</label>
+        <input type="tel" name="phone" placeholder="080xxxxxxxx" required>
 
-<p style="text-align:center;font-size:16px;margin-top:15px">
-Pay to:<br>
-<b>Damilola Fadiora</b><br>
-<b>Kuda MFB</b><br>
-<b>2035470845</b>
-</p>
-</div>
-</body>
-</html>
-`);
+        <button type="submit">Proceed to Payment</button>
+      </form>
+
+      <div class="footer">Need help? <a href="https://t.me/TyburnUK" style="font-weight:bold;">Contact Admin</a></div>
+    </div>
+
+    <script>
+      const airtimeSelect = document.getElementById("airtimeSelect");
+      const dataSelect = document.getElementById("dataSelect");
+      const serviceSelect = document.querySelector('select[name="service"]');
+
+      serviceSelect.addEventListener("change", ()=>{
+        if(serviceSelect.value==="airtime"){
+          airtimeSelect.style.display="block";
+          dataSelect.style.display="none";
+        }else if(serviceSelect.value==="data"){
+          dataSelect.style.display="block";
+          airtimeSelect.style.display="none";
+        }else{
+          airtimeSelect.style.display="none";
+          dataSelect.style.display="none";
+        }
+      });
+      // Initialize
+      airtimeSelect.style.display="none";
+      dataSelect.style.display="none";
+    </script>
+  </body>
+  </html>
+  `);
 });
 
-// ====== PAYSTACK INIT ======
-app.post("/pay", async (req, res) => {
-  const { service, network, plan, phone } = req.body;
+// ---------------------
+// Checkout Handler
+// ---------------------
+app.post("/checkout", async (req, res) => {
+  const { service, airtime, data, phone } = req.body;
 
-  let price = isNaN(plan)
-    ? addMarkup(
-        DATA_PLANS[network].find(p => p.id === plan).price
-      )
-    : addMarkup(Number(plan));
+  let finalAmount, network, productDetails;
 
-  const pay = await axios.post(
-    "https://api.paystack.co/transaction/initialize",
-    {
-      email: "customer@cointop.ng",
-      amount: price * 100,
-      metadata: { service, network, plan, phone }
-    },
-    {
-      headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` }
-    }
-  );
-
-  res.redirect(pay.data.data.authorization_url);
-});
-
-// ====== PAYSTACK WEBHOOK ======
-app.post("/webhook", async (req, res) => {
-  const hash = crypto
-    .createHmac("sha512", PAYSTACK_SECRET_KEY)
-    .update(JSON.stringify(req.body))
-    .digest("hex");
-
-  if (hash !== req.headers["x-paystack-signature"])
-    return res.sendStatus(400);
-
-  const data = req.body.data.metadata;
-
-  if (data.service === "airtime") {
-    await axios.post(`${SMEPLUG_BASE_URL}/airtime`, {
-      network: data.network,
-      phone: data.phone,
-      amount: data.plan
-    }, {
-      headers: { Authorization: `Bearer ${SMEPLUG_API_KEY}` }
-    });
+  if(service==="airtime" && airtime){
+    [network, finalAmount] = airtime.split("|");
+    productDetails = `${network} Airtime`;
+  } else if(service==="data" && data){
+    [network,, finalAmount] = data.split("|");
+    productDetails = `${network} Data`;
   } else {
-    await axios.post(`${SMEPLUG_BASE_URL}/data`, {
-      plan_id: data.plan,
-      phone: data.phone
-    }, {
-      headers: { Authorization: `Bearer ${SMEPLUG_API_KEY}` }
-    });
+    return res.send("Invalid selection");
   }
 
-  await notifyTelegram(
-    `✅ CoinTop Order Delivered\n${data.network}\n${data.phone}`
-  );
+  finalAmount = Number(finalAmount) * (1 + MARKUP_PERCENT/100);
 
-  res.sendStatus(200);
+  const order = {
+    id: Date.now(),
+    service,
+    network,
+    phone,
+    amount: finalAmount.toFixed(2),
+    status:"pending"
+  };
+  orders.push(order);
+
+  // Send Telegram notification
+  axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    chat_id: TELEGRAM_CHAT_ID,
+    text:`New Order!\nService: ${productDetails}\nPhone: ${phone}\nAmount: ₦${order.amount}\nOrder ID: ${order.id}`
+  }).catch(console.log);
+
+  // ---------------------
+  // Call SMEPlug API for automated delivery
+  // ---------------------
+  try{
+    let payload = { network_id: 1, phone: phone, amount: Number(finalAmount), customer_reference: order.id.toString() };
+    if(service==="data"){
+      payload["plan"] = data.split("|")[1]; // add plan for data
+    }
+    await axios.post("https://smeplug.ng/api/v1/airtime/purchase", payload, {
+      headers:{ Authorization: `Bearer ${SMEPLUG_API_KEY}` }
+    });
+    order.status="sent";
+  } catch(e){
+    console.log("SMEPlug API Error:", e.message);
+  }
+
+  // Success page
+  res.send(`<h2>✅ Order Placed!</h2><p>Amount: ₦${order.amount}</p><p>Phone: ${phone}</p><p>Status: ${order.status}</p><a href="/">Go Home</a>`);
 });
 
-app.listen(PORT, () =>
-  console.log(`CoinTop running on port ${PORT}`)
-);
+app.listen(PORT,()=>console.log(`CoinTop running on port ${PORT}`));
